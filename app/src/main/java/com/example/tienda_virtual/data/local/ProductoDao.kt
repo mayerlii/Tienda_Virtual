@@ -24,9 +24,15 @@ interface ProductoDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertarProducto(producto: Producto): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertarProductos(productos: List<Producto>)
+
     @Update
     suspend fun actualizarProducto(producto: Producto)
 
     @Delete
     suspend fun eliminarProducto(producto: Producto)
+
+    @Query("DELETE FROM productos WHERE id = :id")
+    suspend fun eliminarProductoPorId(id: Int)
 }

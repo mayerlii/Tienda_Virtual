@@ -202,14 +202,43 @@ fun PerfilScreen(
                         celular = celular,
                         foto = fotoModel?.toString() ?: ""
                     )
-                    mensajeConfirmacion = "¡Perfil actualizado con éxito!"
+                    mensajeConfirmacion = "¡Perfil actualizado y sincronizado con Firebase!"
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Guardar cambios")
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Acceso a Punto 4: Seguridad y Cifrado
+            FilledTonalButton(
+                onClick = {
+                    navController.navigate(Routes.NOTAS_SEGURIDAD)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Security,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Seguridad y Cifrado de Notas (Punto 4)")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Acceso a Punto 5: Sincronización en la Nube
+            com.example.tienda_virtual.ui.components.SincronizacionCloudBar(
+                viewModel = viewModel,
+                modifier = Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             OutlinedButton(
                 onClick = {

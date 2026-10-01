@@ -36,6 +36,7 @@ object Routes {
     const val CARRITO = "carrito"
     const val PAGOS = "pagos"
     const val PEDIDOS = "pedidos"
+    const val NOTAS_SEGURIDAD = "seguridad_notas"
 }
 
 /**
@@ -175,6 +176,13 @@ fun AppNavigation(
             composable(Routes.PEDIDOS) {
                 PedidosScreen(
                     viewModel = viewModel,
+                    navController = navController
+                )
+            }
+
+            // Pantalla 11: Seguridad en el Almacenamiento y Cifrado (Punto 4)
+            composable(Routes.NOTAS_SEGURIDAD) {
+                com.example.tienda_virtual.seguridad.NotasConfidencialesScreen(
                     navController = navController
                 )
             }

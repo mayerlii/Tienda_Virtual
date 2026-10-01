@@ -299,6 +299,15 @@ fun VendedorHomeScreen(
                 .fillMaxSize()
                 .padding(horizontal = 16.dp)
         ) {
+            Spacer(modifier = Modifier.height(6.dp))
+
+            com.example.tienda_virtual.ui.components.SincronizacionCloudBar(
+                viewModel = viewModel,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+            )
+
             Spacer(modifier = Modifier.height(8.dp))
 
             Row(

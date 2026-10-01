@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.google.services)
 }
 
 android {
@@ -59,6 +60,18 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
+
+    // Security & EncryptedSharedPreferences (Punto 4)
+    implementation(libs.androidx.security.crypto)
+
+    // Networking HTTP/REST & JSON for Firebase (Punto 5)
+    implementation(libs.okhttp)
+    implementation(libs.gson)
+
+    // Firebase Cloud Platform
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.firestore)
+    implementation(libs.firebase.database)
 
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))

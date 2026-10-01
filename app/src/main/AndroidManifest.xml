@@ -1,6 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <permission
+        android:name="com.example.tienda_virtual.permission.READ_PRODUCTS"
+        android:protectionLevel="signature" />
+
+    <permission
+        android:name="com.example.tienda_virtual.permission.WRITE_PRODUCTS"
+        android:protectionLevel="signature" />
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -28,6 +39,14 @@
             android:exported="false"
             android:theme="@style/Theme.Tienda_virtual"
             android:windowSoftInputMode="adjustResize" />
+
+            <provider
+                android:name=".data.provider.ProductoContentProvider"
+                android:authorities="com.example.tienda_virtual.provider"
+                android:enabled="true"
+                android:exported="true"
+                android:readPermission="com.example.tienda_virtual.permission.READ_PRODUCTS"
+                android:writePermission="com.example.tienda_virtual.permission.WRITE_PRODUCTS" />
     </application>
 
 </manifest>

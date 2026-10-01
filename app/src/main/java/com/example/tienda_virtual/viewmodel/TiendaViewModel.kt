@@ -17,7 +17,11 @@ import com.example.tienda_virtual.archivos.Pedido
 import com.example.tienda_virtual.archivos.Producto
 import com.example.tienda_virtual.archivos.Rol
 import com.example.tienda_virtual.archivos.Usuario
+import com.example.tienda_virtual.data.remote.FirebaseSyncService
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 data class UsuarioCuenta(
@@ -30,6 +34,12 @@ data class UsuarioCuenta(
     var foto: String = ""
 )
 
+enum class EstadoSincronizacion {
+    CONECTADO_CACHED,
+    SINCRONIZANDO,
+    ERROR_OFFLINE
+}
+
 data class NotificacionVendedor(
     val vendedorCorreo: String,
     val mensaje: String
@@ -38,8 +48,13 @@ data class NotificacionVendedor(
 class TiendaViewModel(application: Application) : AndroidViewModel(application) {
 
     private val productoDao = AppDatabase.getDatabase(application).productoDao()
+    val firebaseSyncService = FirebaseSyncService(application)
+
     private val PREFS_TIENDA = "prefs_tienda_jas"
     private val KEY_USUARIOS_DATA = "key_usuarios_data_json"
+
+    var estadoSincronizacion by mutableStateOf(EstadoSincronizacion.CONECTADO_CACHED)
+    var ultimaSincronizacionHora by mutableStateOf("Iniciando...")
 
     var usuarioActual by mutableStateOf<Usuario?>(null)
         private set
@@ -97,10 +112,50 @@ class TiendaViewModel(application: Application) : AndroidViewModel(application) 
 
     init {
         cargarUsuariosGuardados()
+
+        // 1. Estrategia de Caché Híbrida - Fase Local Inmediata (0ms de latencia):
+        // Expone primero los productos almacenados en la base de datos local (Room)
         viewModelScope.launch {
             productoDao.obtenerTodosLosProductos().collect { listaProductos ->
                 productos.clear()
                 productos.addAll(listaProductos)
+            }
+        }
+
+        // 2. Estrategia de Caché Híbrida - Revalidación en Segundo Plano:
+        // Consulta la API REST de Firebase para actualizar productos y usuarios sin bloquear la UI
+        sincronizarConFirebaseSegundoPlano()
+    }
+
+    /**
+     * Sincroniza datos con Firebase en segundo plano sin bloquear el hilo principal.
+     */
+    fun sincronizarConFirebaseSegundoPlano() {
+        viewModelScope.launch(Dispatchers.IO) {
+            estadoSincronizacion = EstadoSincronizacion.SINCRONIZANDO
+            try {
+                // A. Sincronizar usuarios (Vendedor y Comprador) hacia Firebase
+                usuariosRegistrados.forEach { cuenta ->
+                    firebaseSyncService.sincronizarUsuario(cuenta)
+                }
+
+                // B. Descargar catálogo de productos remotos de Firebase
+                val remotos = firebaseSyncService.descargarCatalogoProductosRemoto()
+                if (remotos.isNotEmpty()) {
+                    // Actualizar la caché local en Room
+                    productoDao.insertarProductos(remotos)
+                } else {
+                    // Si Firebase no tiene productos remotos aún, poblarlo con los locales
+                    val listaActual = productos.toList()
+                    if (listaActual.isNotEmpty()) {
+                        firebaseSyncService.poblarCatalogoInicialSiVacio(listaActual)
+                    }
+                }
+
+                estadoSincronizacion = EstadoSincronizacion.CONECTADO_CACHED
+                ultimaSincronizacionHora = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+            } catch (e: Exception) {
+                estadoSincronizacion = EstadoSincronizacion.ERROR_OFFLINE
             }
         }
     }
@@ -176,6 +231,11 @@ class TiendaViewModel(application: Application) : AndroidViewModel(application) 
         )
         usuariosRegistrados.add(nuevaCuenta)
         guardarUsuariosEnPrefs()
+
+        // Sincronizar nuevo usuario (Vendedor o Comprador) hacia Firebase
+        viewModelScope.launch(Dispatchers.IO) {
+            firebaseSyncService.sincronizarUsuario(nuevaCuenta)
+        }
 
         iniciarSesionConCuenta(nuevaCuenta)
         return null
@@ -262,13 +322,19 @@ class TiendaViewModel(application: Application) : AndroidViewModel(application) 
         val idx = usuariosRegistrados.indexOfFirst { it.correo.equals(correoLimpio, ignoreCase = true) }
         if (idx != -1) {
             val actual = usuariosRegistrados[idx]
-            usuariosRegistrados[idx] = actual.copy(
+            val cuentaActualizada = actual.copy(
                 nombre = nombre,
                 correo = correo,
                 celular = celular,
                 foto = foto
             )
+            usuariosRegistrados[idx] = cuentaActualizada
             guardarUsuariosEnPrefs()
+
+            // Sincronizar datos actualizados del comprador/vendedor con Firebase
+            viewModelScope.launch(Dispatchers.IO) {
+                firebaseSyncService.sincronizarUsuario(cuentaActualizada)
+            }
         }
 
         usuarioActual = usuarioActual?.copy()
@@ -278,6 +344,20 @@ class TiendaViewModel(application: Application) : AndroidViewModel(application) 
         direccionEnvioGuardada = nuevaDireccion
         usuarioActual?.direccionEnvio = nuevaDireccion
         usuarioActual = usuarioActual?.copy()
+
+        usuarioActual?.let { u ->
+            val idx = usuariosRegistrados.indexOfFirst { it.correo.equals(u.correo, ignoreCase = true) }
+            if (idx != -1) {
+                val cuentaActualizada = usuariosRegistrados[idx].copy(direccionEnvio = nuevaDireccion)
+                usuariosRegistrados[idx] = cuentaActualizada
+                guardarUsuariosEnPrefs()
+
+                // Sincronizar dirección de comprador/vendedor hacia Firebase
+                viewModelScope.launch(Dispatchers.IO) {
+                    firebaseSyncService.sincronizarUsuario(cuentaActualizada)
+                }
+            }
+        }
     }
 
     fun agregarProducto(
@@ -290,7 +370,7 @@ class TiendaViewModel(application: Application) : AndroidViewModel(application) 
     ) {
         val vendedor = usuarioActual ?: return
 
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             val nuevoProducto = Producto(
                 id = 0,
                 nombre = nombre,
@@ -303,20 +383,27 @@ class TiendaViewModel(application: Application) : AndroidViewModel(application) 
                 vendedorCorreo = vendedor.correo,
                 stock = stock
             )
-            productoDao.insertarProducto(nuevoProducto)
+            val nuevoId = productoDao.insertarProducto(nuevoProducto)
+            val productoConId = nuevoProducto.copy(id = nuevoId.toInt())
+            // Sincronizar inserción con Firebase
+            firebaseSyncService.subirOActualizarProducto(productoConId)
         }
     }
 
     fun actualizarProducto(producto: Producto) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             productoDao.actualizarProducto(producto)
+            // Sincronizar actualización con Firebase
+            firebaseSyncService.subirOActualizarProducto(producto)
         }
     }
 
     fun eliminarProducto(producto: Producto) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             productoDao.eliminarProducto(producto)
             carrito.removeAll { it.producto.id == producto.id }
+            // Sincronizar eliminación con Firebase
+            firebaseSyncService.eliminarProductoRemoto(producto.id)
         }
     }
 
@@ -389,13 +476,14 @@ class TiendaViewModel(application: Application) : AndroidViewModel(application) 
 
         pedidos.add(nuevoPedido)
 
-        // Deduct stock for each purchased item in Room DB
+        // Deduct stock for each purchased item in Room DB and sync with Firebase
         carrito.forEach { item ->
             val p = item.producto
             val nuevoStock = (p.stock - item.cantidad).coerceAtLeast(0)
             p.stock = nuevoStock
-            viewModelScope.launch {
+            viewModelScope.launch(Dispatchers.IO) {
                 productoDao.actualizarProducto(p)
+                firebaseSyncService.subirOActualizarProducto(p)
             }
         }
 
